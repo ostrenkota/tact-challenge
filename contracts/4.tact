@@ -48,23 +48,77 @@ message NftWithdrawal {
 
 contract Task4 with Deployable {
   seed: Int as uint128;
+  time: Int as uint32;
+  nft: Address?;
+  owner: Address?;
   
   init(seed: Int) {
     self.seed = seed; // needed to deploy multiple smart contracts copies from one admin address
+    self.time = 0;
+    self.nft = null;
+    self.owner = null;
   }
 
   receive(msg: OwnershipAssigned) {
+    if(self.nft != null) {
+         send(SendParameters{
+                to: context().sender,
+                value: 0,
+                mode: SendRemainingValue,
+                bounce: true,
+                body: Transfer{
+                     queryId: 0,
+                     newOwner: msg.prevOwner,
+                     responseDestination: msg.prevOwner,
+                     customPayload: null,
+                     forwardAmount: 0,
+                     forwardPayload: beginCell().endCell().beginParse()
+                }.toCell()
+            });
+    } else {
+        self.nft = context().sender;
+        self.owner = msg.prevOwner;
+        self.time = msg.forwardPayload.loadUint(32) + now();
+    }
   }
 
   receive(msg: NftWithdrawal) {
+    require(context().sender == self.owner, "Invalid sender");
+    if(self.time > now()) {
+           send(SendParameters{
+                to: context().sender,
+                value: 0,
+                mode: SendRemainingValue,
+                bounce: true,
+                body: "NFT is still locked".asComment()
+           });
+    } else {
+            send(SendParameters{
+                to: self.nft!!,
+                value: 0,
+                mode: SendRemainingBalance,
+                bounce: true,
+                body: Transfer{
+                           queryId: 0,
+                           newOwner: self.owner!!,
+                           responseDestination: self.owner!!,
+                           customPayload: null,
+                           forwardAmount: 0,
+                           forwardPayload: beginCell().endCell().beginParse()
+                     }.toCell()
+            });
+    }
   }
 
   get fun time(): Int {
+    return self.time - now();
   }
 
   get fun nft(): Address? {
+    return self.nft;
   }
 
   get fun owner(): Address? {
+    return self.owner;
   }
 }
